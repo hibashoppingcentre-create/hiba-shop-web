@@ -1,9 +1,15 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import os
+
+# 1. നിങ്ങളുടെ ഗൂഗിൾ ഷീറ്റ് ലിങ്ക് താഴെ നൽകുക
+url = "https://docs.google.com/spreadsheets/d/1pyFeXlE59TjtyrYzoar8X6bH02ZBmRP43m3lmj0GfkI/edit?usp=sharing"
 
 # പേജ് സെറ്റിംഗ്സ്
 st.set_page_config(page_title="HIBA SHOPPING CENTER", layout="wide")
+
+# കണക്ഷൻ സെറ്റ് ചെയ്യുന്നു
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ലോഗിൻ വിവരങ്ങൾ
 USER_CREDENTIALS = {"admin": "hiba123", "staff": "staff123"}
@@ -11,7 +17,6 @@ USER_CREDENTIALS = {"admin": "hiba123", "staff": "staff123"}
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# ലോഗിൻ വിൻഡോ
 if not st.session_state['logged_in']:
     st.title("🔐 HIBA SHOPPING CENTER - Login")
     user = st.text_input("User Name")
@@ -19,52 +24,39 @@ if not st.session_state['logged_in']:
     if st.button("Login"):
         if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
             st.session_state['logged_in'] = True
-            st.session_state['user_role'] = user
             st.rerun()
         else:
-            st.error("Username അല്ലെങ്കിൽ Password തെറ്റാണ്!")
-
+            st.error("Invalid Username or Password")
 else:
-    st.sidebar.title(f"Welcome, {st.session_state['user_role'].upper()}")
-    choice = st.sidebar.radio("Menu", ["Dashboard", "Daily Entry", "Master Upload", "Logout"])
+    choice = st.sidebar.radio("Menu", ["Dashboard", "Daily Entry", "Logout"])
 
     if choice == "Logout":
         st.session_state['logged_in'] = False
         st.rerun()
 
-    file_path = 'shop_data.csv'
-
     if choice == "Dashboard":
-        st.title("📊 Business Overview")
-        if os.path.exists(file_path):
-            df = pd.read_csv(file_path)
-            df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
-            years = sorted(df['DATE'].dt.year.unique(), reverse=True)
-            if years:
-                year = st.sidebar.selectbox("Select Year", years)
-                year_df = df[df['DATE'].dt.year == year]
-                st.metric(f"Total Sale - {year}", f"{year_df['SALE'].sum():,.3f} OMR")
-                st.dataframe(year_df, use_container_width=True)
-            else:
-                st.info("ഫയലിൽ ഡാറ്റയൊന്നും കാണുന്നില്ല.")
-        else:
-            st.info("ഡാറ്റ ലഭ്യമല്ല. ദയവായി ഡാറ്റ ചേർക്കുക.")
+        st.title("📊 Business Dashboard")
+        try:
+            df = conn.read(spreadsheet=url)
+            st.dataframe(df, use_container_width=True)
+        except:
+            st.info("ഡാറ്റ ലഭ്യമല്ല. Daily Entry വഴി പുതിയത് ചേർക്കുക.")
 
     elif choice == "Daily Entry":
-        st.title("📝 Daily Entry")
+        st.title("📝 Daily Data Entry")
         with st.form("entry_form"):
-            d = st.date_input("Date")
-            s = st.number_input("Sale", format="%.3f")
-            p = st.number_input("Purchase", format="%.3f")
-            if st.form_submit_button("Save"):
-                new_data = pd.DataFrame([[d, s, p]], columns=['DATE', 'SALE', 'PURCHASE'])
-                new_data.to_csv(file_path, mode='a', header=not os.path.exists(file_path), index=False)
-                st.success("വിജയകരമായി സേവ് ചെയ്തു!")
-
-    elif choice == "Master Upload":
-        st.title("📂 Master File Upload")
-        uploaded_file = st.file_uploader("നിങ്ങളുടെ CSV ഫയൽ ഇവിടെ അപ്‌ലോഡ് ചെയ്യുക", type=['csv'])
-        if uploaded_file:
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.success("ഫയൽ അപ്‌ലോഡ് ചെയ്തു!")
+            date = st.date_input("Date")
+            sale = st.number_input("Total Sale", format="%.3f")
+            purchase = st.number_input("Total Purchase", format="%.3f")
+            
+            if st.form_submit_button("Save to Google Sheets"):
+                try:
+                    existing_data = conn.read(spreadsheet=url)
+                except:
+                    existing_data = pd.DataFrame(columns=["DATE", "SALE", "PURCHASE"])
+                
+                new_row = pd.DataFrame([{"DATE": str(date), "SALE": sale, "PURCHASE": purchase}])
+                updated_df = pd.concat([existing_data, new_row], ignore_index=True)
+                
+                conn.update(spreadsheet=url, data=updated_df)
+                st.success("വിജയകരമായി ഗൂഗിൾ ഷീറ്റിൽ സേവ് ചെയ്തു!")
