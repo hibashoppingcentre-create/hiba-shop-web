@@ -1,62 +1,63 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+from datetime import datetime
 
-# 1. നിങ്ങളുടെ ഗൂഗിൾ ഷീറ്റ് ലിങ്ക് താഴെ നൽകുക
-url = "https://docs.google.com/spreadsheets/d/1pyFeXlE59TjtyrYzoar8X6bH02ZBmRP43m3lmj0GfkI/edit?usp=sharing"
+# വെബ്സൈറ്റ് ടൈറ്റിൽ
+st.set_page_config(page_title="Hiba Shop Manager", layout="centered")
 
-# പേജ് സെറ്റിംഗ്സ്
-st.set_page_config(page_title="HIBA SHOPPING CENTER", layout="wide")
+st.title("📝 Hiba Shop Daily Entry")
 
-# കണക്ഷൻ സെറ്റ് ചെയ്യുന്നു
-conn = st.connection("gsheets", type=GSheetsConnection)
+# ലോഗിൻ സിസ്റ്റം
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-# ലോഗിൻ വിവരങ്ങൾ
-USER_CREDENTIALS = {"admin": "hiba123", "staff": "staff123"}
-
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-
-if not st.session_state['logged_in']:
-    st.title("🔐 HIBA SHOPPING CENTER - Login")
-    user = st.text_input("User Name")
-    pw = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
-            st.session_state['logged_in'] = True
-            st.rerun()
-        else:
-            st.error("Invalid Username or Password")
+if not st.session_state.logged_in:
+    with st.form("login_form"):
+        username = st.text_input("User Name")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        
+        if submit:
+            if username == "admin" and password == "hiba123":
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Invalid Username or Password")
 else:
-    choice = st.sidebar.radio("Menu", ["Dashboard", "Daily Entry", "Logout"])
+    # ഗൂഗിൾ ഷീറ്റ് കണക്ഷൻ
+    # Secrets-ൽ നൽകിയിരിക്കുന്ന ലിങ്ക് വഴി കണക്ട് ചെയ്യുന്നു
+    conn = st.connection("gsheets", type=GSheetsConnection)
 
-    if choice == "Logout":
-        st.session_state['logged_in'] = False
-        st.rerun()
+    # നിലവിലുള്ള ഡാറ്റ വായിക്കുന്നു
+    try:
+        existing_data = conn.read(ttl=0)
+    except:
+        existing_data = pd.DataFrame(columns=["DATE", "SALE", "PURCHASE"])
 
-    if choice == "Dashboard":
-        st.title("📊 Business Dashboard")
-        try:
-            df = conn.read(spreadsheet=url)
-            st.dataframe(df, use_container_width=True)
-        except:
-            st.info("ഡാറ്റ ലഭ്യമല്ല. Daily Entry വഴി പുതിയത് ചേർക്കുക.")
+    # ഡാറ്റ എന്ട്രി ഫോം
+    with st.form("entry_form", clear_on_submit=True):
+        date = st.date_input("Date", datetime.now())
+        sale = st.number_input("Total Sale", min_value=0.0, step=0.1)
+        purchase = st.number_input("Total Purchase", min_value=0.0, step=0.1)
+        
+        submitted = st.form_submit_button("Save to Google Sheet")
 
-    elif choice == "Daily Entry":
-        st.title("📝 Daily Data Entry")
-        with st.form("entry_form"):
-            date = st.date_input("Date")
-            sale = st.number_input("Total Sale", format="%.3f")
-            purchase = st.number_input("Total Purchase", format="%.3f")
+        if submitted:
+            # പുതിയ ഡാറ്റ ഒരു റോ ആയി ഉണ്ടാക്കുന്നു
+            new_entry = pd.DataFrame([{"DATE": str(date), "SALE": sale, "PURCHASE": purchase}])
             
-            if st.form_submit_button("Save to Google Sheets"):
-                try:
-                    existing_data = conn.read(spreadsheet=url)
-                except:
-                    existing_data = pd.DataFrame(columns=["DATE", "SALE", "PURCHASE"])
-                
-                new_row = pd.DataFrame([{"DATE": str(date), "SALE": sale, "PURCHASE": purchase}])
-                updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-                
+            # നിലവിലുള്ള ഡാറ്റയുമായി ചേർക്കുന്നു
+            updated_df = pd.concat([existing_data, new_entry], ignore_index=True)
+            
+            # ഷീറ്റിലേക്ക് സേവ് ചെയ്യുന്നു
+            try:
                 conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_df)
-                st.success("വിജയകരമായി ഗൂഗിൾ ഷീറ്റിൽ സേവ് ചെയ്തു!")
+                st.success("Data successfully saved!")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+    # Logout ബട്ടൺ
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
