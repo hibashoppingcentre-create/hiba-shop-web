@@ -58,5 +58,5 @@ else:
                 new_row = pd.DataFrame([{"DATE": str(date), "SALE": sale, "PURCHASE": purchase}])
                 updated_df = pd.concat([existing_data, new_row], ignore_index=True)
                 
-                conn.update(spreadsheet=url, data=updated_df)
+                conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_df)
                 st.success("വിജയകരമായി ഗൂഗിൾ ഷീറ്റിൽ സേവ് ചെയ്തു!")
